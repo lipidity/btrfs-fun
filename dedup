@@ -1,0 +1,108 @@
+#!/bin/zsh
+
+# What the script should do:
+# 1. I md5sum every file
+# 2. If the checksums are identical, I compare the files
+# 3. If 2 or more files are really identical:
+#     - move one to a temp-dir
+#     - cp --reflink the second to the position and name of the first
+#     - do a chown --reference, chmod --reference and touch --reference
+#       to copy owner, file mode bits and time from the orginal to the
+#       reflink-copy and then delete the original in temp-dir
+
+<<END
+This script will share data among files that are the same
+ but currently does NOT maintain metadata (permissions, etc.)
+This in potentially UNSAFE.
+END
+
+# TODO:
+# dry-run : list duplicates and total size that could be saved
+# metadata: maintain permissions, ACLs, etc. Probably should use rsync for this.
+
+unset dry
+unset verbose
+unset yesall
+for ((;;)) do
+    case $1 in
+        -n)
+            dry=1 ;;
+        -v)
+            verbose=1 ;;
+        -y)
+            yesall=1 ;;
+        *) break ;;
+    esac
+    shift
+done
+
+(( # != 1 )) && exit 2
+
+# checksum all files
+find $1 -xdev -type f -print0 | xargs -0 md5sum > /tmp/md5
+
+
+sum=0
+
+phy(){
+    filefrag -v $1 | fgrep 'ext logical physical' -A1 | tail -1 | tr -s ' ' . | cut -d. -f4
+}
+
+zmodload zsh/stat
+
+cp(){ echo $* }
+
+# all the files that have a duplicate
+dup5s=$(sort /tmp/md5 | uniq -w 32 -d)
+
+# for each duplicated checksum
+for md5 in $(cut -c 1-32 <<< $dup5s); do
+    # list of files with this checksum
+    files=$(grep $md5 /tmp/md5 | cut -c 35-)
+    f=(${(f)files})
+    # position in filesystem of one file
+    phy=$(phy $f[1])
+    # 0 probably means it doesn't have extents (kept with metadata)
+    if (( phy > 0 )); then
+        # if all files have same position, then already deduped or hard links
+        doit=0
+        for file in $f[2,-1]; do
+            if (( $(phy $file) != $phy )); then
+                doit=1
+                break
+            fi
+        done
+        if (( doit == 0 )); then
+            continue
+        fi
+        # show list of files to be deduped
+        print
+        print $files
+        if [[ -n $yesall ]] || read -q '?dedup (y/n)? '; then
+            for file in $f[2,-1]; do
+                p=$(phy $file)
+                if (( p != $phy )); then
+                    # double-check ; contents may have changed by now
+                    if cmp $file $f[1]; then
+                        (( sum += $(du -sk $file | cut -f1) ))
+                        if [[ -z $dry ]]; then
+                            if (( $(stat +nlink $file) > 1 )); then
+                                print $file HAS HARD LINKS:
+                                btrfs inspect-internal inode-resolve $(stat +inode $file) $file
+                                read -q '?continue (y/n)? ' || continue
+                            fi
+                            cp --reflink=always --sparse=auto --preserve=all $f[1] $file
+                        else
+                            print reflink $f[1] $file
+                        fi
+                        print sum $sum
+                    else
+                        print FALSE POSITIVE $file $f[1]
+                    fi
+                fi
+            done
+        fi
+    fi
+done
+
+print $sum k saved
