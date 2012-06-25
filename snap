@@ -1,0 +1,14 @@
+#!/bin/zsh
+emulate zsh
+
+p=/snapshots/$(date +'%Y%m%dT%H%M')
+
+if btrfs subvolume snapshot / $p; then
+    if (( # > 0 )); then
+        print -- "$*" > $p/backup.log
+    else
+        cat > $p/backup.log
+    fi
+#else
+#    exit $?
+fi
