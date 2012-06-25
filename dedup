@@ -10,16 +10,6 @@
 #       to copy owner, file mode bits and time from the orginal to the
 #       reflink-copy and then delete the original in temp-dir
 
-<<END
-This script will share data among files that are the same
- but currently does NOT maintain metadata (permissions, etc.)
-This in potentially UNSAFE.
-END
-
-# TODO:
-# dry-run : list duplicates and total size that could be saved
-# metadata: maintain permissions, ACLs, etc. Probably should use rsync for this.
-
 unset dry
 unset verbose
 unset yesall
@@ -39,18 +29,17 @@ done
 (( # != 1 )) && exit 2
 
 # checksum all files
-find $1 -xdev -type f -print0 | xargs -0 md5sum > /tmp/md5
+# xdev  don't cross filesystems
+# links1 skip hard linked files
+find $1 -xdev -type f -links 1 -print0 | xargs -0 md5sum > /tmp/md5
 
+# TODO: find hard links as well, but only reflink from them, not to them
 
 sum=0
 
 phy(){
     filefrag -v $1 | fgrep 'ext logical physical' -A1 | tail -1 | tr -s ' ' . | cut -d. -f4
 }
-
-zmodload zsh/stat
-
-cp(){ echo $* }
 
 # all the files that have a duplicate
 dup5s=$(sort /tmp/md5 | uniq -w 32 -d)
@@ -86,12 +75,8 @@ for md5 in $(cut -c 1-32 <<< $dup5s); do
                     if cmp $file $f[1]; then
                         (( sum += $(du -sk $file | cut -f1) ))
                         if [[ -z $dry ]]; then
-                            if (( $(stat +nlink $file) > 1 )); then
-                                print $file HAS HARD LINKS:
-                                btrfs inspect-internal inode-resolve $(stat +inode $file) $file
-                                read -q '?continue (y/n)? ' || continue
-                            fi
-                            cp --reflink=always --sparse=auto --preserve=all $f[1] $file
+                            ## guaranteed to be on same filesystem (-xdev), so inode will not change
+                            /bin/cp --reflink=always --sparse=auto $f[1] $file
                         else
                             print reflink $f[1] $file
                         fi
