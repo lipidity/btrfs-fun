@@ -79,7 +79,7 @@ else
 fi
 RSYNC_LOG=$(mktemp)
 print 'Syncing...'
-/usr/bin/rsync -i --del --delete-excluded --exclude-from=/backup.exclude --archive --numeric-ids --hard-links --inplace --acls --xattrs --one-file-system --stats --omit-dir-times / $f.$e/ |& tee $RSYNC_LOG
+/usr/bin/rsync -i --del --delete-excluded --filter='. /etc/backup' --archive --numeric-ids --hard-links --inplace --acls --xattrs --one-file-system --stats --omit-dir-times / $f.$e/ |& tee $RSYNC_LOG
 print 'Finalizing...'
 mv -i $f.$e $backup.$e
 mv -i $RSYNC_LOG $backup.$e/backup.log
