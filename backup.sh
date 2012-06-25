@@ -3,6 +3,8 @@ emulate zsh
 
 MAINHOST=carbon
 
+BACKUP_ROOT=/backup
+
 inc(){
     print 'Making snapshot...'
     e=inc
@@ -31,7 +33,7 @@ fi
 h=${HOST:?}
 
 # where this backup will be placed
-d=${0:h}/${h}
+d=${BACKUP_ROOT}/${h}
 # name of this backup
 # hostname and ISO8601 date+time
 n=${h}-$(date +'%FT%R')
@@ -75,15 +77,16 @@ else
         new
     fi
 fi
-
+RSYNC_LOG=$(mktemp)
 print 'Syncing...'
-/usr/bin/rsync -i --del --delete-excluded --exclude-from=/backup.exclude --archive --numeric-ids --hard-links --inplace --acls --xattrs --one-file-system --stats / $f.$e/
+/usr/bin/rsync -i --del --delete-excluded --exclude-from=/backup.exclude --archive --numeric-ids --hard-links --inplace --acls --xattrs --one-file-system --stats / $f.$e/ |& tee $RSYNC_LOG
 print 'Finalizing...'
 mv -i $f.$e $backup.$e
+mv -i $RSYNC_LOG $backup.$e/backup.log
 if [[ ${h} == $MAINHOST ]]; then
-    id=$(btrfs subvolume list $0:h | fgrep $n.$e | cut -f2 -d' ')
+    id=$(btrfs subvolume list $BACKUP_ROOT | fgrep $n.$e | cut -f2 -d' ')
     print 'Setting default snapshot '$id
-    btrfs subvolume set-default $id $0:h
+    btrfs subvolume set-default $id $BACKUP_ROOT
 fi
 print 'Done'
 
