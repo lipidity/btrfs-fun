@@ -36,7 +36,7 @@ h=${HOST:?}
 d=${BACKUP_ROOT}/${h}
 # name of this backup
 # hostname and ISO8601 date+time
-n=${h}-$(date +'%FT%R')
+n=${h}-$(date +'%Y%m%dT%H%M')
 
 # working path template for this backup
 f=$d/.$n
