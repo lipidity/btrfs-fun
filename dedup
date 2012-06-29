@@ -21,6 +21,9 @@ for ((;;)) do
             verbose=1 ;;
         -y)
             yesall=1 ;;
+        -*)
+            print 'usage: '$0:t' [-n] [-v] [-y] <fs>' ;;
+	    exit 2
         *) break ;;
     esac
     shift
@@ -49,6 +52,7 @@ for md5 in $(cut -c 1-32 <<< $dup5s); do
     # list of files with this checksum
     files=$(grep $md5 /tmp/md5 | cut -c 35-)
     f=(${(f)files})
+    unset files
     # position in filesystem of one file
     phy=$(phy $f[1])
     # 0 probably means it doesn't have extents (kept with metadata)
@@ -66,7 +70,7 @@ for md5 in $(cut -c 1-32 <<< $dup5s); do
         fi
         # show list of files to be deduped
         print
-        print $files
+        print -l $f
         if [[ -n $yesall ]] || read -q '?dedup (y/n)? '; then
             for file in $f[2,-1]; do
                 p=$(phy $file)
