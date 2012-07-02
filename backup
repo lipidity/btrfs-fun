@@ -83,6 +83,7 @@ print 'Syncing...'
 print 'Finalizing...'
 mv -i $f.$e $backup.$e
 mv -i $RSYNC_LOG $backup.$e/backup.log
+print -l '' 'TIMEOUT 100' >> $backup.$e/boot/syslinux/syslinux.cfg
 if [[ ${h} == $MAINHOST ]]; then
     id=$(btrfs subvolume list $BACKUP_ROOT | fgrep $n.$e | cut -f2 -d' ')
     print 'Setting default snapshot '$id
