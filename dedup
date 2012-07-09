@@ -1,40 +1,42 @@
 #!/bin/zsh
+emulate zsh
 
-# What the script should do:
-# 1. I md5sum every file
-# 2. If the checksums are identical, I compare the files
-# 3. If 2 or more files are really identical:
-#     - move one to a temp-dir
-#     - cp --reflink the second to the position and name of the first
-#     - do a chown --reference, chmod --reference and touch --reference
-#       to copy owner, file mode bits and time from the orginal to the
-#       reflink-copy and then delete the original in temp-dir
+usage(){
+    print 'usage: '$0:t' [-n] [-v] [-y] <fs>'
+    print -C2 - -n -v -y "just print what would happen; don't change anything" 'verbose' "don't ask before each operation"
+}
 
-unset dry
-unset verbose
-unset yesall
+#unset dry
+#unset verbose
+#unset yesall
 for ((;;)) do
     case $1 in
         -n)
             dry=1 ;;
         -v)
+# doesn't do anything right now
             verbose=1 ;;
         -y)
             yesall=1 ;;
         -*)
-            print 'usage: '$0:t' [-n] [-v] [-y] <fs>' ;;
-	    exit 2
+            usage
+	    exit 2 ;;
         *) break ;;
     esac
     shift
 done
 
-(( # != 1 )) && exit 2
+if (( # != 1 )); then
+    usage
+    exit 2
+fi
+
+cksums=$(mktemp)
 
 # checksum all files
 # xdev  don't cross filesystems
 # links1 skip hard linked files
-find $1 -xdev -type f -links 1 -print0 | xargs -0 md5sum > /tmp/md5
+find $1 -xdev -type f -links 1 -print0 | xargs -0 md5sum > $cksums
 
 # TODO: find hard links as well, but only reflink from them, not to them
 
@@ -45,12 +47,11 @@ phy(){
 }
 
 # all the files that have a duplicate
-dup5s=$(sort /tmp/md5 | uniq -w 32 -d)
+dup5s=$(sort $cksums | uniq -w 32 -d)
 
-# for each duplicated checksum
 for md5 in $(cut -c 1-32 <<< $dup5s); do
     # list of files with this checksum
-    files=$(grep $md5 /tmp/md5 | cut -c 35-)
+    files=$(grep $md5 $cksums | cut -c 35-)
     f=(${(f)files})
     unset files
     # position in filesystem of one file
@@ -79,12 +80,11 @@ for md5 in $(cut -c 1-32 <<< $dup5s); do
                     if cmp $file $f[1]; then
                         (( sum += $(du -sk $file | cut -f1) ))
                         if [[ -z $dry ]]; then
-                            ## guaranteed to be on same filesystem (-xdev), so inode will not change
+                            # guaranteed to be on same filesystem (-xdev), so inode will not change
                             /bin/cp --reflink=always --sparse=auto $f[1] $file
                         else
                             print reflink $f[1] $file
                         fi
-                        print sum $sum
                     else
                         print FALSE POSITIVE $file $f[1]
                     fi
@@ -94,4 +94,4 @@ for md5 in $(cut -c 1-32 <<< $dup5s); do
     fi
 done
 
-print $sum k saved
+print $sum kilobytes saved

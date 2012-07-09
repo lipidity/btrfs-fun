@@ -19,7 +19,7 @@ new(){
 TRAPZERR(){
     print BACKUP FAILED
     [[ -e $f ]] && print 'partial backup in '$f
-    exit 2
+    exit 10
 }
 
 # $1 is type of backup, 'inc' or 'new'
@@ -45,10 +45,10 @@ backup=$d/$n
 
 if [[ -e $(print $backup.*(N)) ]]; then
     print $backup exists
-    exit 1
+    exit 2
 elif [[ -e $(print $f.*(N)) ]]; then
     print Partial backup at $f.*
-    exit 1
+    exit 2
 fi
 
 # path to most recent existing backup
@@ -64,9 +64,10 @@ print 'BACKING UP '$n
 if [[ -z $last ]]; then
     print -l '*** no existing backup found ***'
     if [[ $1 == inc ]]; then
-        exit 1
+        exit 3
     else
-        new
+#        new
+        exit 4
     fi
 else
     print 'previous backup: '$last:t
@@ -79,11 +80,12 @@ else
 fi
 RSYNC_LOG=$(mktemp)
 print 'Syncing...'
+# --checksum!?
 /usr/bin/rsync -i --del --delete-excluded --filter='. /etc/backup' --archive --numeric-ids --hard-links --inplace --acls --xattrs --one-file-system --stats --omit-dir-times / $f.$e/ |& tee $RSYNC_LOG
 print 'Finalizing...'
 mv -i $f.$e $backup.$e
 mv -i $RSYNC_LOG $backup.$e/backup.log
-print -l '' 'TIMEOUT 100' >> $backup.$e/boot/syslinux/syslinux.cfg
+#sed -i '/^TIMEOUT .*$/s//TIMEOUT 100/' $backup.$e/boot/syslinux/syslinux.cfg
 if [[ ${h} == $MAINHOST ]]; then
     id=$(btrfs subvolume list $BACKUP_ROOT | fgrep $n.$e | cut -f2 -d' ')
     print 'Setting default snapshot '$id

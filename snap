@@ -7,6 +7,7 @@ if btrfs subvolume snapshot / $p; then
     if (( # > 0 )); then
         print -- "$*" > $p/backup.log
     else
+        print -- 'reason for snapshot (C-d to finish):'
         cat > $p/backup.log
     fi
 #else
