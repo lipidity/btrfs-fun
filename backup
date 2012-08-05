@@ -81,7 +81,8 @@ print 'Syncing...'
 # --checksum!?
 /usr/bin/rsync -i --del --delete-excluded --filter='. /etc/backup' --archive --numeric-ids --hard-links --inplace --acls --xattrs --one-file-system --stats --omit-dir-times / $f.$e/ |& tee $RSYNC_LOG
 print 'Finalizing...'
-mv -i $f.$e $backup.$e
-mv -i $RSYNC_LOG $backup.$e/backup.log
+mv -f $RSYNC_LOG $f.$e/backup.log
+btrfs subvolume snapshot -r $f.$e $backup.$e
+btrfs subvolume delete $f.$e
 print 'Done'
 
