@@ -1,88 +1,46 @@
 #!/bin/zsh
-emulate zsh
+emulate -L zsh
+setopt extended_glob
 
-BACKUP_ROOT=/backup
-
-inc(){
-    print 'Making snapshot...'
-    e=inc
-    btrfs subvolume snapshot $last $f.$e
-}
-new(){
-    print 'Making subvolume...'
-    e=new
-    btrfs subvolume create $f.$e
-}
-
+msg(){ print -- $* >&2 }
+die(){ msg $*; exit 2 }
 TRAPZERR(){
-    print BACKUP FAILED
-    [[ -e $f ]] && print 'partial backup in '$f
+    msg 'BACKUP FAILED'
+    [[ -e $stage ]] && msg 'Partial backup in '$stage
     exit 10
 }
+TRAPINT(){ TRAPZERR }
+TRAPQUIT(){ TRAPZERR }
+TRAPTERM(){ TRAPZERR }
 
-# $1 is type of backup, 'inc' or 'new'
-# if not given, do inc if existing backup, otherwise new
-if [[ $1 != (|inc|new) ]]; then
-    print 'usage: $0:t [inc|new]'
-    exit 1
+: =btrfs =mktemp =rsync  =blkid =findmnt
+[[ -z $HOST ]] && die 'Please set the hostname and try again'
+
+device=$(blkid -l -o device -t LABEL=backup)
+backups=$(findmnt -n -o target $device)/$HOST
+stage=$backups/root
+
+#last=$(print -- $backups/([0-9]##)/([0-9]##)/$HOST@*(/NnOn[1]))
+
+final_path=$backups/$(print -P -- '%D{%Y/%m}/%M@%D{%Y%m%dT%H%M}')
+#stage=$(mktemp -d --tmpdir=$backups)/$final_path:t
+
+if [[ ! -d $stage ]]; then
+	msg 'First backup of '$HOST' onto '$device' ('$backups')'
+	btrfs subvolume create $stage
 fi
 
-# ensure hostname
-h=${HOST:?}
+rsync_log=$(mktemp --tmpdir=$stage:h)
+# --checksum
+rsync --log-file=$rsync_log -i --del --delete-excluded --filter='. /etc/backup' --archive --numeric-ids --hard-links --inplace --acls --xattrs --one-file-system --stats --omit-dir-times / $stage/
 
-# where this backup will be placed
-d=${BACKUP_ROOT}/${h}
-# name of this backup
-# hostname and ISO8601 date+time
-n=${h}-$(date +'%Y%m%dT%H%M')
+chmod 440 $rsync_log
+chown root:wheel $rsync_log
+mv -f $rsync_log $stage/backup.log
 
-# working path template for this backup
-f=$d/.$n
-# final path template for this backup
-backup=$d/$n
+mkdir -p $final_path:h
 
-if [[ -e $(print $backup.*(N)) ]]; then
-    print $backup exists
-    exit 2
-elif [[ -e $(print $f.*(N)) ]]; then
-    print Partial backup at $f.*
-    exit 2
-fi
+btrfs subvolume snapshot -r $stage $final_path
 
-# path to most recent existing backup
-# N -- no error message if no matches
-# n -- sort numerically
-# On -- sort by name descending
-# [1] -- first match only
-# ^D -- turn off GLOB_DOTS
-last=$(print ${d}/${h}-*(NnOn[1]^D))
-
-print 'BACKING UP '$n
-
-if [[ -z $last ]]; then
-    print -l '*** no existing backup found ***'
-    if [[ $1 == inc ]]; then
-        exit 3
-    else
-#        new
-        exit 4
-    fi
-else
-    print 'previous backup: '$last:t
-    if [[ $1 == (|inc) ]]; then
-        inc
-    else
-        read -q '?Make fresh (not incremental) backup (y/n)? ' || exit
-        new
-    fi
-fi
-RSYNC_LOG=$(mktemp)
-print 'Syncing...'
-# --checksum!?
-/usr/bin/rsync --log-file=$RSYNC_LOG -i --del --delete-excluded --filter='. /etc/backup' --archive --numeric-ids --hard-links --inplace --acls --xattrs --one-file-system --stats --omit-dir-times / $f.$e/
-print 'Finalizing...'
-mv -f $RSYNC_LOG $f.$e/backup.log
-btrfs subvolume snapshot -r $f.$e $backup.$e
-btrfs subvolume delete $f.$e
-print 'Done'
+msg 'Done'
 
