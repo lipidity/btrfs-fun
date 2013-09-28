@@ -1,0 +1,62 @@
+#!/bin/zsh
+emulate -L zsh
+setopt extended_glob
+
+info(){ logger -s -t btrup $* }
+fail(){ info -p user.err 'BACKUP FAILED'; exit 2 }
+trap fail ZERR INT QUIT TERM
+zmodload -F zsh/stat b:zstat
+: =mount =btrfs =sync =findmnt =mktemp =logger
+
+if (( # != 3 )) {
+    print -r 'usage: '$0:h' source_root subvol destination' >&2
+    exit 1
+}
+
+source_root=$1
+subvolume=${2%%/##}
+destination=$3
+
+# can't backup root subvolume
+[[ ! $source_root -ef $source_root/$subvolume ]]
+
+[[ -d $source_root/$subvolume && -d $destination ]]
+
+# ensure btrfs destination
+btrfs filesystem sync $destination
+
+dst=$destination/$(findmnt -nT $source_root -o UUID)/$subvolume
+
+source_snap=$source_root/$subvolume.snap
+source_back=$source_root/$subvolume.back
+
+destination_snap=$dst/$source_snap:t
+destination_back=$dst/@back
+
+if [[ -d $source_snap || -d $destination_snap ]] {
+    info 'previous backup was interrupted'
+    fail
+}
+btrfs subvolume snapshot -r -- $source_root/$subvolume $source_snap
+sync
+
+mkdir -vp -- $dst
+
+#TODO option for using file or pipe
+f=(-f $dst/.rcv)
+if [[ -d $source_back ]] {
+    p+=(-p $source_back)
+}
+
+btrfs send $f $p $source_snap
+btrfs receive $f $dst
+
+[[ -d $destination_back ]] && mv -v -- $destination_back $dst/@$(zstat -F '%Y%m%dT%H%M%S%z' +mtime $destination_back)
+mv -v $destination_snap $destination_back
+
+[[ -d $source_back ]] && btrfs subvolume delete $source_back
+mv -v $source_snap $source_back
+
+rm -fv -- $f[2]
+
+info done
