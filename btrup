@@ -6,7 +6,7 @@ info(){ logger -s -t btrup $* }
 fail(){ info -p user.err 'BACKUP FAILED'; exit 2 }
 trap fail ZERR INT QUIT TERM
 zmodload -F zsh/stat b:zstat
-: =mount =btrfs =sync =findmnt =mktemp =logger
+: =btrfs =sync =findmnt =logger
 
 if (( # != 3 )) {
     print -r 'usage: '$0:h' source_root subvol destination' >&2
