@@ -48,10 +48,15 @@ if [[ -d $source_back ]] {
     p+=(-p $source_back)
 }
 
+#TODO clone sources from any other backed up subvolumes
 btrfs send $f $p $source_snap
 btrfs receive $f $dst
 
-[[ -d $destination_back ]] && mv -v -- $destination_back $dst/@$(zstat -F '%Y%m%dT%H%M%S%z' +mtime $destination_back)
+if [[ -d $destination_back ]] {
+    last_backup_destination=$dst/@$(zstat -g -F '%Y/%m/%d-%H:%M:%S' +mtime $destination_back)
+    mkdir -vp -- $last_backup_destination:h
+    mv -v -- $destination_back $last_backup_destination
+}
 mv -v $destination_snap $destination_back
 
 [[ -d $source_back ]] && btrfs subvolume delete $source_back
