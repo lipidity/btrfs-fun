@@ -31,13 +31,13 @@ source_snap=$source_root/$subvolume.snap
 source_back=$source_root/$subvolume.back
 
 destination_snap=$dst/$source_snap:t
-destination_back=$dst/@back
 
 if [[ -d $source_snap || -d $destination_snap ]] {
-    info 'previous backup was interrupted'
+    info 'previous backup was interrupted. please clean it up and run again'
     fail
 }
 btrfs subvolume snapshot -r -- $source_root/$subvolume $source_snap
+final_location=$dst/@$(date -u +'%Y/%m/%d-%H:%M:%S')
 sync
 
 mkdir -vp -- $dst
@@ -48,20 +48,17 @@ if [[ -d $source_back ]] {
     p+=(-p $source_back)
 }
 
-#TODO clone sources from any other backed up subvolumes
+#TODO specify other clone sources?
 btrfs send $f $p $source_snap
-btrfs receive $f $dst
+btrfs receive -v $f $dst
 
-if [[ -d $destination_back ]] {
-    last_backup_destination=$dst/@$(zstat -g -F '%Y/%m/%d-%H:%M:%S' +mtime $destination_back)
-    mkdir -vp -- $last_backup_destination:h
-    mv -v -- $destination_back $last_backup_destination
-}
-mv -v $destination_snap $destination_back
+rm -fv -- $f[2]
+
+mkdir -vp -- $final_location:h
+btrfs subvolume snapshot -r $destination_snap $final_location
+btrfs subvolume delete $destination_snap
 
 [[ -d $source_back ]] && btrfs subvolume delete $source_back
 mv -v $source_snap $source_back
-
-rm -fv -- $f[2]
 
 info done
